@@ -5,7 +5,18 @@ from aiogram.types import Update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 class DatabaseSessionMiddleware(BaseMiddleware):
-    async def __call__(self, handler: Callable, event: Update, data: Dict[str, Any]) -> Any:
+    async def __call__(
+        self,
+        handler: Callable[[Update, Dict[str, Any]], Awaitable[Any]],
+        event: Update,
+        data: Dict[str, Any]
+    ) -> Any:
         async with AsyncSessionLocal() as session:
-            data['session'] = session
-            return await handler(event, data) 
+            try:
+                data['session'] = session
+                response = await handler(event, data)
+                await session.commit()  # Явный коммит после успешного хендлера
+                return response
+            except Exception as e:
+                await session.rollback()  # Откат при ошибке
+                raise

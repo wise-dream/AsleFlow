@@ -1,0 +1,8 @@
+{
+  "tests/crud_tests.py::test_payment_crud": true,
+  "tests/crud_tests.py::test_social_account_crud": true,
+  "tests/crud_tests.py::test_user_workflow_crud": true,
+  "tests/crud_tests.py::test_workflow_settings_crud": true,
+  "tests/crud_tests.py::test_post_crud": true,
+  "tests/crud_tests.py::test_post_stats_crud": true
+}

@@ -15,13 +15,13 @@ from bot.handlers.basic import register_basic_handlers
 def register_all_handlers(dp: Dispatcher):
     register_basic_handlers(dp)
 
-async def set_middlewares(dp: Dispatcher):
-    redis = await get_redis()
+async def set_middlewares(dp: Dispatcher, redis):
     dp.update.middleware(LoggingMiddleware())
     dp.update.middleware(DatabaseSessionMiddleware())
-    dp.update.middleware(I18nMiddleware())
-    dp.update.middleware(AuthMiddleware())
     dp.update.middleware(RedisMiddleware(redis))
+    dp.update.middleware(AuthMiddleware(redis))
+    dp.update.middleware(I18nMiddleware())
+
 
 async def on_startup():
     async with AsyncSessionLocal() as session:
@@ -35,7 +35,8 @@ async def main():
     bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
 
-    await set_middlewares(dp)
+    redis = await get_redis()
+    await set_middlewares(dp, redis)
     register_all_handlers(dp)
 
     await on_startup()

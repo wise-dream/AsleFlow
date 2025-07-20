@@ -33,4 +33,18 @@ async def delete_post_stats(session: AsyncSession, stats_id: int) -> bool:
         return False
     await session.delete(stats)
     await session.commit()
-    return True 
+    return True
+
+async def get_post_stats_by_post_id(session: AsyncSession, post_id: int) -> PostStats | None:
+    result = await session.execute(select(PostStats).where(PostStats.post_id == post_id))
+    return result.scalar_one_or_none()
+
+async def increment_post_stats(
+    session: AsyncSession, post_id: int, views: int = 0, likes: int = 0, reposts: int = 0
+) -> None:
+    stats = await get_post_stats_by_post_id(session, post_id)
+    if stats:
+        stats.views += views
+        stats.likes += likes
+        stats.reposts += reposts
+        await session.commit()

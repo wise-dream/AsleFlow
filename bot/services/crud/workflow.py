@@ -33,4 +33,10 @@ async def delete_user_workflow(session: AsyncSession, workflow_id: int) -> bool:
         return False
     await session.delete(workflow)
     await session.commit()
-    return True 
+    return True
+
+async def get_user_workflows_by_user_id(session: AsyncSession, user_id: int) -> list[UserWorkflow]:
+    result = await session.execute(
+        select(UserWorkflow).where(UserWorkflow.user_id == user_id)
+    )
+    return result.scalars().all()

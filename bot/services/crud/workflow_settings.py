@@ -33,4 +33,10 @@ async def delete_workflow_settings(session: AsyncSession, settings_id: int) -> b
         return False
     await session.delete(settings)
     await session.commit()
-    return True 
+    return True
+
+async def get_settings_by_workflow_id(session: AsyncSession, user_workflow_id: int) -> WorkflowSettings | None:
+    result = await session.execute(
+        select(WorkflowSettings).where(WorkflowSettings.user_workflow_id == user_workflow_id)
+    )
+    return result.scalar_one_or_none()
