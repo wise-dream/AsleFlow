@@ -62,6 +62,10 @@ class AuthMiddleware(BaseMiddleware):
                         "language": user.language,
                         "role": user.role,
                         "referred_by": user.referred_by,
+                        "referral_code": user.referral_code,
+                        "cash": float(user.cash) if user.cash else 0.0,
+                        "free_posts_used": user.free_posts_used,
+                        "free_posts_limit": user.free_posts_limit,
                     }
                     await redis.set(f"user:{user_id}", json.dumps(payload), ex=CACHE_TTL)
                 except Exception:

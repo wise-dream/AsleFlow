@@ -52,3 +52,53 @@ async def delete_payment(session: AsyncSession, payment_id: int) -> bool:
     await session.delete(payment)
     await session.commit()
     return True
+
+async def get_payments_by_subscription_id(session: AsyncSession, subscription_id: int) -> list[Payment]:
+    result = await session.execute(select(Payment).where(Payment.subscription_id == subscription_id))
+    return result.scalars().all()
+
+async def get_payments_by_date_range(session: AsyncSession, start_date, end_date) -> list[Payment]:
+    result = await session.execute(
+        select(Payment).where(
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date
+        )
+    )
+    return result.scalars().all()
+
+async def get_payments_by_amount_range(session: AsyncSession, min_amount, max_amount) -> list[Payment]:
+    result = await session.execute(
+        select(Payment).where(
+            Payment.amount >= min_amount,
+            Payment.amount <= max_amount
+        )
+    )
+    return result.scalars().all()
+
+async def get_completed_payments(session: AsyncSession) -> list[Payment]:
+    result = await session.execute(select(Payment).where(Payment.status == 'completed'))
+    return result.scalars().all()
+
+async def get_pending_payments(session: AsyncSession) -> list[Payment]:
+    result = await session.execute(select(Payment).where(Payment.status == 'pending'))
+    return result.scalars().all()
+
+async def get_failed_payments(session: AsyncSession) -> list[Payment]:
+    result = await session.execute(select(Payment).where(Payment.status == 'failed'))
+    return result.scalars().all()
+
+async def complete_payment(session: AsyncSession, payment_id: int) -> bool:
+    payment = await get_payment_by_id(session, payment_id)
+    if not payment:
+        return False
+    payment.status = 'completed'
+    await session.commit()
+    return True
+
+async def fail_payment(session: AsyncSession, payment_id: int) -> bool:
+    payment = await get_payment_by_id(session, payment_id)
+    if not payment:
+        return False
+    payment.status = 'failed'
+    await session.commit()
+    return True

@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from bot.services import crud
-from bot.models.models import User, Subscription, Payment, SocialAccount, UserWorkflow, WorkflowSettings, Post, PostStats
+from bot.models.models import User, Subscription, Payment, SocialAccount, UserWorkflow, WorkflowSettings, Post, PostStats, Plan
 
 logger = logging.getLogger(__name__)
 
@@ -39,21 +39,31 @@ async def test_user_crud(session: AsyncSession):
 @pytest.mark.asyncio
 async def test_subscription_crud(session: AsyncSession, user: User):
     now = datetime.now(timezone.utc)
+    
+    # Создаем план для теста
+    plan = await crud.plan_crud.create_plan(
+        session,
+        name="Test Plan",
+        price=100.00,
+        channels_limit=5,
+        posts_limit=100,
+        manual_posts_limit=10
+    )
 
     # CREATE
     sub = await crud.subscription_crud.create_subscription(
         session,
         user_id=user.id,
-        type='basic',
+        plan_id=plan.id,  # Используем созданный plan
         start_date=now,
         end_date=now + timedelta(days=30)
     )
     assert sub.id
 
     # UPDATE
-    await crud.subscription_crud.update_subscription(session, sub.id, type='premium')
+    await crud.subscription_crud.update_subscription(session, sub.id, status='inactive')
     updated = await crud.subscription_crud.get_subscription_by_id(session, sub.id)
-    assert updated.type == 'premium'
+    assert updated.status == 'inactive'
 
     # DELETE
     result = await crud.subscription_crud.delete_subscription(session, sub.id)
@@ -131,9 +141,9 @@ async def test_workflow_settings_crud(session: AsyncSession, workflow: UserWorkf
         interval_hours=1,
         theme="tech",
         context="ctx",
-        channel_type="public",
-        content_format="text",
-        content_source="ai",
+        writing_style="friendly",
+        generation_method="ai",
+        content_length="medium",
         moderation="auto",
         first_post_time="10:00",
         post_language="en"

@@ -9,8 +9,6 @@ from datetime import datetime, timezone
 Base = declarative_base()
 
 # Enums
-SubscriptionType = Enum('basic', 'premium', 'enterprise', name='subscription_type')
-ThemeType = Enum('tech', 'lifestyle', 'business', name='theme_type')
 PaymentStatus = Enum('pending', 'completed', 'failed', name='payment_status')
 WorkflowStatus = Enum('active', 'inactive', name='workflow_status')
 PostStatus = Enum('pending', 'scheduled', 'published', 'failed', name='post_status')
@@ -19,6 +17,9 @@ MediaType = Enum('text', 'image', 'video', name='media_type')
 UserRole = Enum('admin', 'client', name='user_role')
 
 
+# --------------------
+# Пользователь
+# --------------------
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True, index=True)
@@ -32,8 +33,30 @@ class User(Base):
     role = Column(UserRole, nullable=False, default='client')
     cash = Column(Numeric(10, 2), default=0)
     referral_code = Column(String(20), unique=True, nullable=True)
-    referred_by = Column(String(20), nullable=True)
+    referred_by_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
     free_posts_used = Column(Integer, default=0)
+    free_posts_limit = Column(Integer, default=5)  # Индивидуальный лимит бесплатных постов
+
+    # Настройки уведомлений
+    notify_new_posts = Column(Boolean, default=True)
+    notify_scheduled = Column(Boolean, default=True)
+    notify_errors = Column(Boolean, default=True)
+    notify_payments = Column(Boolean, default=True)
+
+    # Настройки контента
+    default_language = Column(String(2), default='ru')
+    default_style = Column(String(20), default='friendly')
+    default_length = Column(String(20), default='medium')
+    default_moderation = Column(Boolean, default=False)
+
+    # Безопасность
+    two_factor_enabled = Column(Boolean, default=False)
+    last_login = Column(DateTime(timezone=True), nullable=True)
+    login_count = Column(Integer, default=0)
+
+    # Интерфейс
+    theme = Column(String(20), default='light')
+    compact_mode = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
@@ -42,36 +65,85 @@ class User(Base):
     subscriptions = relationship('Subscription', back_populates='user')
     social_accounts = relationship('SocialAccount', back_populates='user')
     user_workflows = relationship('UserWorkflow', back_populates='user')
+    
+    # Реферальная система
+    referred_by = relationship('User', remote_side=[id], backref='referrals')
 
 
+# --------------------
+# Тарифные планы
+# --------------------
+class Plan(Base):
+    __tablename__ = 'plans'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), unique=True, nullable=False)
+    price = Column(Numeric(10, 2), nullable=False)
+    channels_limit = Column(Integer, nullable=False)
+    posts_limit = Column(Integer, nullable=False)
+    manual_posts_limit = Column(Integer, nullable=False)
+    ai_priority = Column(Boolean, default=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+
+    subscriptions = relationship('Subscription', back_populates='plan')
+
+
+# --------------------
+# Подписки
+# --------------------
 class Subscription(Base):
     __tablename__ = 'subscriptions'
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), index=True)
-    type = Column(SubscriptionType, nullable=False)
+    plan_id = Column(Integer, ForeignKey('plans.id', ondelete='CASCADE'), nullable=False)
     start_date = Column(DateTime(timezone=True), nullable=False, index=True)
     end_date = Column(DateTime(timezone=True), nullable=False, index=True)
     status = Column(String(50), default='active')
+    auto_renew = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
     user = relationship('User', back_populates='subscriptions')
+    plan = relationship('Plan', back_populates='subscriptions')
     payments = relationship('Payment', back_populates='subscription')
+    usage = relationship('UsageStats', back_populates='subscription', uselist=False)
 
 
+# --------------------
+# Учёт использования
+# --------------------
+class UsageStats(Base):
+    __tablename__ = 'usage_stats'
+    id = Column(Integer, primary_key=True, index=True)
+    subscription_id = Column(Integer, ForeignKey('subscriptions.id', ondelete='CASCADE'), index=True, unique=True)
+    posts_used = Column(Integer, default=0)
+    manual_posts_used = Column(Integer, default=0)
+    channels_connected = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    subscription = relationship('Subscription', back_populates='usage')
+
+
+# --------------------
+# Оплаты
+# --------------------
 class Payment(Base):
     __tablename__ = 'payments'
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), index=True)
     subscription_id = Column(Integer, ForeignKey('subscriptions.id', ondelete='CASCADE'), index=True)
-    amount = Column(Integer, nullable=False)
+    amount = Column(Numeric(10, 2), nullable=False)
     status = Column(PaymentStatus, default='pending')
     payment_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     subscription = relationship('Subscription', back_populates='payments')
 
 
+# --------------------
+# Соцсети
+# --------------------
 class SocialAccount(Base):
     __tablename__ = 'social_accounts'
     id = Column(Integer, primary_key=True, index=True)
@@ -95,6 +167,9 @@ class SocialAccount(Base):
     )
 
 
+# --------------------
+# Задачи (воркфлоу)
+# --------------------
 class UserWorkflow(Base):
     __tablename__ = 'user_workflows'
     id = Column(Integer, primary_key=True, index=True)
@@ -118,10 +193,10 @@ class WorkflowSettings(Base):
     interval_hours = Column(Integer, nullable=False, default=6, index=True)
     theme = Column(String(100), nullable=False)
     context = Column(Text, nullable=True)
-    channel_type = Column(String(50), nullable=False)
-    content_format = Column(String(50), nullable=False)
-    content_source = Column(String(50), nullable=False)
-    moderation = Column(String(50), nullable=False)
+    writing_style = Column(String(50), nullable=False)
+    generation_method = Column(String(50), nullable=False)
+    content_length = Column(String(20), nullable=False, default='medium')
+    moderation = Column(String(50), nullable=False, default='disabled')
     first_post_time = Column(String(5), nullable=False)
     post_language = Column(String(5), nullable=False, default='ru')
     post_media_type = Column(MediaType, nullable=True)
@@ -136,10 +211,14 @@ class WorkflowSettings(Base):
     social_account = relationship('SocialAccount')
 
 
+# --------------------
+# Посты
+# --------------------
 class Post(Base):
     __tablename__ = 'posts'
     id = Column(Integer, primary_key=True, index=True)
     user_workflow_id = Column(Integer, ForeignKey('user_workflows.id', ondelete='CASCADE'), index=True)
+    social_account_id = Column(Integer, ForeignKey('social_accounts.id', ondelete='CASCADE'), index=True)
     topic = Column(Text, nullable=False)
     content = Column(Text, nullable=False)
     media_type = Column(MediaType, nullable=False, index=True, default='image')
@@ -156,8 +235,12 @@ class Post(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
     workflow = relationship('UserWorkflow', back_populates='posts')
+    social_account = relationship('SocialAccount')
 
 
+# --------------------
+# Статистика постов
+# --------------------
 class PostStats(Base):
     __tablename__ = 'post_stats'
     id = Column(Integer, primary_key=True, index=True)

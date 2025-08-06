@@ -3,7 +3,9 @@ from bot import config
 from sqlalchemy import text
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.types import BotCommand
 
+from bot.handlers.workflows import register_workflow_handlers
 from db.connection import AsyncSessionLocal, get_redis
 from bot.middlewares.db import DatabaseSessionMiddleware
 from bot.middlewares.auth import AuthMiddleware
@@ -11,9 +13,16 @@ from bot.middlewares.i18n import I18nMiddleware
 from bot.middlewares.logging import LoggingMiddleware
 from bot.middlewares.redis import RedisMiddleware
 from bot.handlers.basic import register_basic_handlers
+from bot.handlers.socials import register_socials_handlers
+from bot.handlers.posts import register_posts_handlers
+
 
 def register_all_handlers(dp: Dispatcher):
     register_basic_handlers(dp)
+    register_socials_handlers(dp)
+    register_workflow_handlers(dp)
+    register_posts_handlers(dp)
+
 
 async def set_middlewares(dp: Dispatcher, redis):
     dp.update.middleware(LoggingMiddleware())
@@ -23,13 +32,37 @@ async def set_middlewares(dp: Dispatcher, redis):
     dp.update.middleware(I18nMiddleware())
 
 
+async def set_bot_commands(bot: Bot):
+    """Устанавливает меню команд бота"""
+    commands = [
+        BotCommand(command="start", description="🚀 Начать работу с ботом"),
+        BotCommand(command="help", description="❓ Справка по командам"),
+        BotCommand(command="workflows", description="🧠 Управление задачами"),
+        BotCommand(command="accounts", description="📱 Управление аккаунтами"),
+        BotCommand(command="posts", description="📝 Управление постами"),
+        BotCommand(command="about", description="👤 Информация о профиле"),
+        BotCommand(command="settings", description="⚙️ Настройки бота"),
+        BotCommand(command="test_ai", description="🤖 Тест OpenAI API"),
+    ]
+    await bot.set_my_commands(commands)
+
+
 async def on_startup():
-    async with AsyncSessionLocal() as session:
-        await session.execute(text('SELECT 1'))
+    from db.connection import test_db_connection
+    # Проверяем подключение к базе данных
+    db_ok = await test_db_connection()
+    if not db_ok:
+        print("❌ Ошибка подключения к базе данных!")
+        print("Проверьте настройки в файле .env")
+        return
+    
+    print("✅ Подключение к базе данных успешно")
+
 
 async def on_shutdown():
     redis = await get_redis()
     await redis.aclose()
+
 
 async def main():
     bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -40,8 +73,10 @@ async def main():
     register_all_handlers(dp)
 
     await on_startup()
+    await set_bot_commands(bot)
     print("Bot started!")
     await dp.start_polling(bot, shutdown=on_shutdown)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

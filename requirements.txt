@@ -37,3 +37,5 @@ tomli==2.2.1
 typing-inspection==0.4.1
 typing_extensions==4.14.1
 yarl==1.20.1
+fastapi==0.104.1
+uvicorn==0.24.0

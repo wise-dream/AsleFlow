@@ -2,7 +2,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from bot.models.models import SocialAccount
 
-ALLOWED_FIELDS = {"platform", "username", "access_token", "is_active"}
+ALLOWED_FIELDS = {
+    "platform", "channel_name", "channel_id", "channel_type", 
+    "access_token", "telegram_chat_id"
+}
 
 async def create_social_account(session: AsyncSession, **kwargs) -> SocialAccount:
     account = SocialAccount(**kwargs)
@@ -53,3 +56,27 @@ async def get_social_account_by_platform_and_channel(
         )
     )
     return result.scalar_one_or_none()
+
+async def get_social_accounts_by_platform(session: AsyncSession, user_id: int, platform: str) -> list[SocialAccount]:
+    result = await session.execute(
+        select(SocialAccount).where(
+            SocialAccount.user_id == user_id,
+            SocialAccount.platform == platform
+        )
+    )
+    return result.scalars().all()
+
+async def get_social_account_by_telegram_chat_id(session: AsyncSession, telegram_chat_id: str) -> SocialAccount | None:
+    result = await session.execute(
+        select(SocialAccount).where(SocialAccount.telegram_chat_id == telegram_chat_id)
+    )
+    return result.scalar_one_or_none()
+
+async def get_social_accounts_by_channel_type(session: AsyncSession, user_id: int, channel_type: str) -> list[SocialAccount]:
+    result = await session.execute(
+        select(SocialAccount).where(
+            SocialAccount.user_id == user_id,
+            SocialAccount.channel_type == channel_type
+        )
+    )
+    return result.scalars().all()

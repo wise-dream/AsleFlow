@@ -48,3 +48,50 @@ async def increment_post_stats(
         stats.likes += likes
         stats.reposts += reposts
         await session.commit()
+
+async def get_top_posts_by_views(session: AsyncSession, limit: int = 10) -> list[PostStats]:
+    result = await session.execute(
+        select(PostStats).order_by(PostStats.views.desc()).limit(limit)
+    )
+    return result.scalars().all()
+
+async def get_top_posts_by_likes(session: AsyncSession, limit: int = 10) -> list[PostStats]:
+    result = await session.execute(
+        select(PostStats).order_by(PostStats.likes.desc()).limit(limit)
+    )
+    return result.scalars().all()
+
+async def get_top_posts_by_reposts(session: AsyncSession, limit: int = 10) -> list[PostStats]:
+    result = await session.execute(
+        select(PostStats).order_by(PostStats.reposts.desc()).limit(limit)
+    )
+    return result.scalars().all()
+
+async def get_stats_by_views_range(session: AsyncSession, min_views: int, max_views: int) -> list[PostStats]:
+    result = await session.execute(
+        select(PostStats).where(
+            PostStats.views >= min_views,
+            PostStats.views <= max_views
+        )
+    )
+    return result.scalars().all()
+
+async def get_stats_by_likes_range(session: AsyncSession, min_likes: int, max_likes: int) -> list[PostStats]:
+    result = await session.execute(
+        select(PostStats).where(
+            PostStats.likes >= min_likes,
+            PostStats.likes <= max_likes
+        )
+    )
+    return result.scalars().all()
+
+async def reset_post_stats(session: AsyncSession, post_id: int) -> bool:
+    stats = await get_post_stats_by_post_id(session, post_id)
+    if not stats:
+        return False
+    
+    stats.views = 0
+    stats.likes = 0
+    stats.reposts = 0
+    await session.commit()
+    return True

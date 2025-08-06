@@ -16,6 +16,7 @@ from bot.services.crud import (
     workflow_settings_crud,
     post_crud,
     post_stats_crud,
+    plan_crud,
 )
 
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -36,6 +37,17 @@ async def session() -> AsyncSession: # type: ignore
         yield session
 
 @pytest_asyncio.fixture
+async def plan(session):
+    return await plan_crud.create_plan(
+        session,
+        name="Basic Plan",
+        price=100.00,
+        channels_limit=5,
+        posts_limit=100,
+        manual_posts_limit=10
+    )
+
+@pytest_asyncio.fixture
 async def user(session):
     return await user_crud.create_user(
         session,
@@ -45,11 +57,11 @@ async def user(session):
     )
 
 @pytest_asyncio.fixture
-async def subscription(session, user):
+async def subscription(session, user, plan):
     return await subscription_crud.create_subscription(
         session,
         user_id=user.id,
-        type="basic",
+        plan_id=plan.id,  # Используем созданный plan
         start_date=datetime.now(timezone.utc),
         end_date=datetime.now(timezone.utc) + timedelta(days=30)
     )
@@ -103,6 +115,65 @@ async def stats(session, post):
         likes=5
     )
 
+
+# Фикстуры для тестирования хэндлеров
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from aiogram.types import Message, CallbackQuery, User as TelegramUser
+
+@pytest.fixture
+def mock_message():
+    """Фикстура для создания мока сообщения"""
+    message = AsyncMock(spec=Message)
+    message.from_user = MagicMock(spec=TelegramUser)
+    message.from_user.id = 123456
+    message.from_user.full_name = "Test User"
+    message.from_user.username = "testuser"
+    message.answer = AsyncMock()
+    message.reply = AsyncMock()
+    return message
+
+@pytest.fixture
+def mock_callback():
+    """Фикстура для создания мока callback"""
+    callback = AsyncMock(spec=CallbackQuery)
+    callback.from_user = MagicMock(spec=TelegramUser)
+    callback.from_user.id = 123456
+    callback.from_user.full_name = "Test User"
+    callback.answer = AsyncMock()
+    # Создаем мок для message отдельно
+    callback.message = MagicMock()
+    callback.message.answer = AsyncMock()
+    return callback
+
+@pytest.fixture
+def mock_state():
+    """Фикстура для создания мока состояния FSM"""
+    state = AsyncMock()
+    state.set_state = AsyncMock()
+    state.update_data = AsyncMock()
+    state.get_data = AsyncMock(return_value={})
+    state.clear = AsyncMock()
+    return state
+
+@pytest.fixture
+def mock_session():
+    """Фикстура для создания мока сессии БД"""
+    session = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.close = AsyncMock()
+    return session
+
+@pytest.fixture
+def mock_user():
+    """Фикстура для создания мока пользователя"""
+    user = MagicMock()
+    user.id = 1
+    user.telegram_id = 123456
+    user.name = "Test User"
+    user.language = "ru"
+    return user
 
 # crud_tests.py
 import sys
@@ -196,9 +267,9 @@ async def test_workflow_settings_crud(session: AsyncSession, workflow: UserWorkf
         interval_hours=1,
         theme="tech",
         context="ctx",
-        channel_type="public",
-        content_format="text",
-        content_source="ai",
+        writing_style="friendly",
+        generation_method="ai",
+        content_length="medium",
         moderation="auto",
         first_post_time="10:00",
         post_language="en"

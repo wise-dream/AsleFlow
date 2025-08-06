@@ -4,5 +4,7 @@
   "tests/crud_tests.py::test_user_workflow_crud": true,
   "tests/crud_tests.py::test_workflow_settings_crud": true,
   "tests/crud_tests.py::test_post_crud": true,
-  "tests/crud_tests.py::test_post_stats_crud": true
+  "tests/crud_tests.py::test_post_stats_crud": true,
+  "tests/test_about_commands.py": true,
+  "tests/test_settings.py": true
 }

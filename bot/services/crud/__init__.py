@@ -7,6 +7,8 @@ from . import (
     workflow_settings as workflow_settings_crud,
     post as post_crud,
     post_stats as post_stats_crud,
+    plan as plan_crud,
+    usage_stats as usage_stats_crud,
 )
 
 __all__ = [
@@ -18,4 +20,6 @@ __all__ = [
     "workflow_settings_crud",
     "post_crud",
     "post_stats_crud",
+    "plan_crud",
+    "usage_stats_crud",
 ]
