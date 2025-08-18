@@ -61,7 +61,8 @@ class AuthMiddleware(BaseMiddleware):
                         "username": user.username,
                         "language": user.language,
                         "role": user.role,
-                        "referred_by": user.referred_by,
+                        # Храним только примитивы: используем referred_by_id вместо relationship
+                        "referred_by_id": user.referred_by_id,
                         "referral_code": user.referral_code,
                         "cash": float(user.cash) if user.cash else 0.0,
                         "free_posts_used": user.free_posts_used,

@@ -1,8 +1,15 @@
+import os
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
+from dotenv import load_dotenv
 
-DATABASE_URL = "postgresql+asyncpg://admin:asleflow$db$pas@95.181.162.71:5432/asleflowdb"
+# Load env from project root
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set in environment")
 
 SEED_PLANS = [
     {
@@ -35,6 +42,26 @@ SEED_PLANS = [
         "description": "Максимальные возможности для бизнеса. 10 каналов, 500 постов, 100 ручных постов и высокий приоритет AI.",
         "is_active": True
     },
+]
+
+SEED_PROMPT_TEMPLATES = [
+    {
+        "name": "Базовый шаблон",
+        "description": "Шаблон, учитывающий тематику и описание ситуации пользователя.",
+        "template_text": (
+            "Сгенерируй качественный пост для соцсетей.\n"
+            "Тема: '{topic}'.\n"
+            "Контекст: '{context}'.\n"
+            "Цель: дать полезную ценность, удержать внимание и подтолкнуть к взаимодействию.\n"
+            "Ограничения: избегай воды, пиши конкретно, используй подзаголовки/списки при необходимости.\n"
+            "Стиль: {style}. Длина: {length}. Язык: {language}.\n"
+            "Верни итоговый текст без лишних пояснений."
+        ),
+        "is_system": True,
+        "is_active": True,
+        "default_temperature": 0.7,
+        "max_tokens": None,
+    }
 ]
 
 async def truncate_and_seed():
@@ -70,6 +97,21 @@ async def truncate_and_seed():
             )
 
         print("✅ Сидинг планов выполнен.")
+
+        # Вставляем системные шаблоны промптов (если есть таблица)
+        try:
+            for tpl in SEED_PROMPT_TEMPLATES:
+                await conn.execute(
+                    text("""
+                        INSERT INTO prompt_templates 
+                        (name, description, template_text, is_system, is_active, default_temperature, max_tokens)
+                        VALUES (:name, :description, :template_text, :is_system, :is_active, :default_temperature, :max_tokens)
+                    """),
+                    tpl
+                )
+            print("✅ Сидинг prompt_templates выполнен.")
+        except Exception as e:
+            print(f"⚠️ Пропустил сидинг prompt_templates: {e}")
 
     await engine.dispose()
 

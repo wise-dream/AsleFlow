@@ -60,6 +60,14 @@ async def on_startup():
 
 
 async def on_shutdown():
+    # Останавливаем фоновые задачи (шедулер), если запущены
+    try:
+        global _scheduler_task
+        if _scheduler_task:
+            _scheduler_task.cancel()
+    except Exception:
+        pass
+    # Закрываем Redis
     redis = await get_redis()
     await redis.aclose()
 
@@ -75,6 +83,21 @@ async def main():
     await on_startup()
     await set_bot_commands(bot)
     print("Bot started!")
+    # Запускаем фоновый шедулер публикаций
+    async def start_scheduler(bot: Bot):
+        from bot.services.publishing.publisher import PublishingService
+        svc = PublishingService(bot)
+        while True:
+            try:
+                async with AsyncSessionLocal() as session:
+                    await svc.run_publishing_cycle(session)
+            except Exception as e:
+                print(f"Scheduler error: {e}")
+            # Пауза между циклами
+            await asyncio.sleep(60)
+
+    global _scheduler_task
+    _scheduler_task = asyncio.create_task(start_scheduler(bot))
     await dp.start_polling(bot, shutdown=on_shutdown)
 
 

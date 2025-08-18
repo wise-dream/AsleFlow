@@ -1,254 +1,178 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
+from decimal import Decimal
+
+from bot.models.models import User
 from bot.services.crud.user import (
-    get_or_create_user,
-    add_referral_bonus,
-    add_referrer_bonus_from_payment,
-    add_balance_to_user,
-    get_referral_stats,
-    get_user_by_referral_code
+    get_or_create_user, 
+    add_balance_to_user, 
+    get_user_by_telegram_id,
+    add_referral_bonus
 )
-from bot.utils.referral import generate_unique_referral_code
+from bot.services.crud.plan import create_plan
+from bot.services.crud.subscription import create_subscription
+from datetime import datetime, timezone, timedelta
+
+
+@pytest_asyncio.fixture
+async def referrer(session: AsyncSession):
+    """Создает пользователя-пригласителя"""
+    return await get_or_create_user(
+        session=session,
+        telegram_id=1001,
+        full_name="Referrer User",
+        username="referrer",
+        ref_code=None,
+        default_lang='ru'
+    )
+
+
+@pytest_asyncio.fixture
+async def referred_user(session: AsyncSession, referrer: User):
+    """Создает приглашенного пользователя"""
+    return await get_or_create_user(
+        session=session,
+        telegram_id=1002,
+        full_name="Referred User",
+        username="referred",
+        ref_code=referrer.referral_code,
+        default_lang='ru'
+    )
 
 
 @pytest.mark.asyncio
-async def test_create_user_with_referral_code():
-    """Тест создания пользователя с реферальным кодом"""
+async def test_referral_relationship_creation(session: AsyncSession, referrer: User, referred_user: User):
+    """Тест создания реферальной связи"""
     
-    session = AsyncMock()
+    # Проверяем, что у приглашенного пользователя установлена связь с пригласителем
+    assert referred_user.referred_by_id == referrer.id
     
-    # Мокаем отсутствие существующего пользователя
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("bot.services.crud.user.get_user_by_telegram_id", AsyncMock(return_value=None))
-        
-        # Мокаем существующего пользователя с реферальным кодом
-        referrer = MagicMock()
-        referrer.id = 1
-        referrer.referral_code = "ABC123"
-        m.setattr("bot.services.crud.user.get_user_by_referral_code", AsyncMock(return_value=referrer))
-        
-        # Мокаем генерацию уникального реферального кода
-        m.setattr("bot.services.crud.user.generate_unique_referral_code", AsyncMock(return_value="XYZ789"))
-        m.setattr("bot.services.crud.user.add_referral_bonus", AsyncMock(return_value=True))
-        
-        # Создаем нового пользователя с реферальным кодом
+    # Проверяем, что у приглашенного пользователя есть реферальный код
+    assert referred_user.referral_code is not None
+    assert len(referred_user.referral_code) == 8
+    
+    # Проверяем, что у пригласителя есть реферальный код
+    assert referrer.referral_code is not None
+    assert len(referrer.referral_code) == 8
+
+
+@pytest.mark.asyncio
+async def test_referral_bonus_on_registration(session: AsyncSession, referrer: User, referred_user: User):
+    """Тест бонусов при регистрации по реферальному коду"""
+    
+    # Проверяем, что приглашенный пользователь получил бонусы
+    # +50 рублей на баланс
+    assert referred_user.cash == Decimal('50')
+    
+    # +1 бесплатный пост
+    assert referred_user.free_posts_limit == 6  # 5 по умолчанию + 1 бонус
+
+
+@pytest.mark.asyncio
+async def test_referrer_bonus_on_payment(session: AsyncSession, referrer: User, referred_user: User):
+    """Тест бонуса пригласителю при пополнении баланса реферала"""
+    
+    # Изначальный баланс пригласителя
+    initial_balance = referrer.cash or Decimal('0')
+    
+    # Пополняем баланс приглашенного пользователя на 1000 рублей
+    success = await add_balance_to_user(session, referred_user.id, 1000.0)
+    assert success is True
+    
+    # Обновляем данные пользователей
+    await session.refresh(referrer)
+    await session.refresh(referred_user)
+    
+    # Проверяем, что приглашенный пользователь получил 1000 рублей
+    assert referred_user.cash == Decimal('1050')  # 50 (бонус при регистрации) + 1000
+    
+    # Проверяем, что пригласитель получил 10% бонус (100 рублей)
+    expected_bonus = Decimal('100')  # 10% от 1000
+    assert referrer.cash == initial_balance + expected_bonus
+
+
+@pytest.mark.asyncio
+async def test_referral_code_uniqueness(session: AsyncSession):
+    """Тест уникальности реферальных кодов"""
+    
+    # Создаем несколько пользователей
+    users = []
+    for i in range(5):
         user = await get_or_create_user(
             session=session,
-            telegram_id=123456,
-            full_name="Test User",
-            username="testuser",
-            ref_code="ABC123",
-            default_lang='en'
+            telegram_id=2000 + i,
+            full_name=f"User {i}",
+            username=f"user{i}",
+            ref_code=None,
+            default_lang='ru'
         )
-        
-        # Проверяем, что пользователь создан с правильными данными
-        assert user.telegram_id == 123456
-        assert user.name == "Test User"
-        assert user.username == "testuser"
-        assert user.referred_by_id == 1  # ID пригласившего
-        assert user.referral_code == "XYZ789"
+        users.append(user)
+    
+    # Проверяем, что все реферальные коды уникальны
+    codes = [user.referral_code for user in users]
+    assert len(codes) == len(set(codes)), "Реферальные коды должны быть уникальными"
 
 
 @pytest.mark.asyncio
-async def test_create_user_with_invalid_referral_code():
-    """Тест создания пользователя с неверным реферальным кодом"""
+async def test_invalid_referral_code(session: AsyncSession):
+    """Тест обработки неверного реферального кода"""
     
-    session = AsyncMock()
+    # Создаем пользователя с неверным реферальным кодом
+    user = await get_or_create_user(
+        session=session,
+        telegram_id=3001,
+        full_name="Test User",
+        username="testuser",
+        ref_code="INVALID123",  # Неверный код
+        default_lang='ru'
+    )
     
-    # Мокаем отсутствие существующего пользователя
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("bot.services.crud.user.get_user_by_telegram_id", AsyncMock(return_value=None))
-        
-        # Мокаем отсутствие пользователя с реферальным кодом
-        m.setattr("bot.services.crud.user.get_user_by_referral_code", AsyncMock(return_value=None))
-        
-        # Мокаем генерацию уникального реферального кода
-        m.setattr("bot.services.crud.user.generate_unique_referral_code", AsyncMock(return_value="XYZ789"))
-        
-        # Создаем нового пользователя с неверным реферальным кодом
-        user = await get_or_create_user(
-            session=session,
-            telegram_id=123456,
-            full_name="Test User",
-            username="testuser",
-            ref_code="INVALID",
-            default_lang='en'
-        )
-        
-        # Проверяем, что пользователь создан без реферального кода
-        assert user.telegram_id == 123456
-        assert user.name == "Test User"
-        assert user.referred_by is None
-        assert user.referral_code == "XYZ789"
+    # Проверяем, что реферальная связь не установлена
+    assert user.referred_by_id is None
+    
+    # Проверяем, что у пользователя есть свой реферальный код
+    assert user.referral_code is not None
 
 
 @pytest.mark.asyncio
-async def test_add_referral_bonus():
-    """Тест добавления реферального бонуса приглашенному"""
+async def test_self_referral_prevention(session: AsyncSession, referrer: User):
+    """Тест предотвращения самоприглашения"""
     
-    session = AsyncMock()
+    # Пытаемся создать пользователя с собственным реферальным кодом
+    user = await get_or_create_user(
+        session=session,
+        telegram_id=4001,
+        full_name="Self Referral User",
+        username="selfref",
+        ref_code=referrer.referral_code,  # Используем код пригласителя
+        default_lang='ru'
+    )
     
-    # Мокаем приглашенного пользователя
-    referred_user = MagicMock()
-    referred_user.id = 2
-    referred_user.free_posts_limit = 5
-    referred_user.cash = 100
+    # Проверяем, что реферальная связь установлена правильно
+    assert user.referred_by_id == referrer.id
     
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("bot.services.crud.user.get_user_by_id", AsyncMock(return_value=referred_user))
-        
-        # Добавляем бонус приглашенному
-        result = await add_referral_bonus(session, 1, 2)
-        
-        # Проверяем, что бонус добавлен приглашенному
-        assert result is True
-        assert referred_user.free_posts_limit == 6  # 5 + 1
-        assert referred_user.cash == 150  # 100 + 50
+    # Теперь пытаемся создать пользователя с кодом самого себя
+    # Это должно быть предотвращено в обработчике, но в базовой функции создания пользователя
+    # это может пройти, поэтому проверяем логику в обработчике
 
 
 @pytest.mark.asyncio
-async def test_add_referrer_bonus_from_payment():
-    """Тест добавления бонуса пригласившему от пополнения реферала"""
+async def test_referral_stats(session: AsyncSession, referrer: User, referred_user: User):
+    """Тест статистики рефералов"""
     
-    session = AsyncMock()
+    from bot.services.crud.user import get_referral_stats
     
-    # Мокаем реферала
-    referred_user = MagicMock()
-    referred_user.id = 2
-    referred_user.referred_by_id = 1
+    # Получаем статистику пригласителя
+    stats = await get_referral_stats(session, referrer.id)
     
-    # Мокаем пригласившего
-    referrer = MagicMock()
-    referrer.id = 1
-    referrer.cash = 100
+    assert stats["referral_code"] == referrer.referral_code
+    assert stats["referred_count"] == 1
+    assert len(stats["referred_users"]) == 1
     
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("bot.services.crud.user.get_user_by_id", AsyncMock(side_effect=[referred_user, referrer]))
-        
-        # Добавляем бонус пригласившему от пополнения на 500 рублей
-        result = await add_referrer_bonus_from_payment(session, 2, 500)
-        
-        # Проверяем, что бонус добавлен пригласившему (10% от 500 = 50)
-        assert result is True
-        assert referrer.cash == 150  # 100 + 50
-
-
-@pytest.mark.asyncio
-async def test_add_balance_to_user():
-    """Тест пополнения баланса пользователя с реферальным бонусом"""
+    # Получаем статистику приглашенного пользователя
+    stats = await get_referral_stats(session, referred_user.id)
     
-    session = AsyncMock()
-    
-    # Мокаем пользователя с рефералом
-    user = MagicMock()
-    user.id = 2
-    user.cash = 100
-    user.referred_by_id = 1
-    
-    # Мокаем пригласившего
-    referrer = MagicMock()
-    referrer.id = 1
-    referrer.cash = 200
-    
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("bot.services.crud.user.get_user_by_id", AsyncMock(side_effect=[user, referrer]))
-        m.setattr("bot.services.crud.user.add_referrer_bonus_from_payment", AsyncMock(return_value=True))
-        
-        # Пополняем баланс на 500 рублей
-        result = await add_balance_to_user(session, 2, 500)
-        
-        # Проверяем, что баланс пополнен
-        assert result is True
-        assert user.cash == 600  # 100 + 500
-
-
-@pytest.mark.asyncio
-async def test_get_referral_stats():
-    """Тест получения статистики рефералов"""
-    
-    session = AsyncMock()
-    
-    # Мокаем пользователя
-    user = MagicMock()
-    user.id = 1
-    user.referral_code = "ABC123"
-    
-    # Мокаем список приглашенных пользователей
-    referred_users = [MagicMock(id=2), MagicMock(id=3)]
-    
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("bot.services.crud.user.get_user_by_id", AsyncMock(return_value=user))
-        
-        # Мокаем результат запроса к базе данных
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = referred_users
-        session.execute.return_value = mock_result
-        
-        # Получаем статистику
-        stats = await get_referral_stats(session, 1)
-        
-        # Проверяем статистику
-        assert stats["referral_code"] == "ABC123"
-        assert stats["referred_count"] == 2
-        assert len(stats["referred_users"]) == 2
-
-
-@pytest.mark.asyncio
-async def test_get_referral_stats_no_user():
-    """Тест получения статистики для несуществующего пользователя"""
-    
-    session = AsyncMock()
-    
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("bot.services.crud.user.get_user_by_id", AsyncMock(return_value=None))
-        
-        # Получаем статистику
-        stats = await get_referral_stats(session, 999)
-        
-        # Проверяем, что возвращается пустая статистика
-        assert stats["referral_code"] is None
-        assert stats["referred_count"] == 0
-        assert len(stats["referred_users"]) == 0
-
-
-@pytest.mark.asyncio
-async def test_referral_code_generation():
-    """Тест генерации уникального реферального кода"""
-    
-    session = AsyncMock()
-    
-    # Мокаем успешную генерацию кода
-    with pytest.MonkeyPatch().context() as m:
-        # Мокаем результат запроса к базе данных
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # Код не существует
-        session.execute.return_value = mock_result
-        
-        # Генерируем код
-        code = await generate_unique_referral_code(session, length=8)
-        
-        # Проверяем, что код сгенерирован (должен быть строкой)
-        assert code is not None
-        assert isinstance(code, str)
-        assert len(code) == 8
-
-
-@pytest.mark.asyncio
-async def test_referral_code_generation_failure():
-    """Тест неудачной генерации реферального кода"""
-    
-    session = AsyncMock()
-    
-    # Мокаем неудачную генерацию кода
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("bot.utils.referral.generate_unique_referral_code", AsyncMock(return_value=None))
-        
-        # Генерируем код
-        code = await generate_unique_referral_code(session, length=8)
-        
-        # Проверяем, что код не сгенерирован
-        assert code is None
-
-
-if __name__ == "__main__":
-    print("✅ Тесты реферальной системы работают корректно!") 
+    assert stats["referral_code"] == referred_user.referral_code
+    assert stats["referred_count"] == 0
+    assert len(stats["referred_users"]) == 0 

@@ -6,21 +6,24 @@ import os
 
 class OpenAIService:
     """Сервис для генерации контента через OpenAI API"""
-    
+
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.base_url = "https://api.openai.com/v1"
         self.model = "gpt-3.5-turbo"
-    
+
     async def generate_post_content(
-        self, 
-        topic: str, 
-        theme: str, 
+        self,
+        topic: str,
+        theme: str,
         style: str = "friendly",
         language: str = "ru",
         content_length: str = "medium",
         max_length: int = 2000,
-        is_premium: bool = False
+        is_premium: bool = False,
+        prompt_template: Optional[str] = None,
+        user_notes: Optional[str] = None,
+        temperature: float = 0.7
     ) -> Optional[str]:
         """
         Генерирует контент поста на основе темы и настроек
@@ -41,7 +44,7 @@ class OpenAIService:
             return await self._generate_mock_content(topic, theme, style, language, content_length)
         
         try:
-            prompt = self._build_prompt(topic, theme, style, language, content_length, max_length)
+            prompt = self._build_prompt(topic, theme, style, language, content_length, max_length, prompt_template, user_notes)
             
             # Выбираем модель в зависимости от типа подписки
             model = "gpt-4" if is_premium else "gpt-3.5-turbo"
@@ -64,8 +67,8 @@ class OpenAIService:
                             "content": prompt
                         }
                     ],
-                    "max_tokens": max_length // 2,  # Примерная оценка токенов
-                    "temperature": 0.7
+                    "max_tokens": max_length // 2,
+                    "temperature": temperature
                 }
                 
                 async with session.post(
@@ -85,7 +88,7 @@ class OpenAIService:
             print(f"Error generating content: {e}")
             return None
     
-    def _build_prompt(self, topic: str, theme: str, style: str, language: str, content_length: str, max_length: int) -> str:
+    def _build_prompt(self, topic: str, theme: str, style: str, language: str, content_length: str, max_length: int, prompt_template: Optional[str], user_notes: Optional[str]) -> str:
         """Строит промпт для генерации контента"""
         
         style_map = {
@@ -104,8 +107,7 @@ class OpenAIService:
         style_text = style_map.get(style, "дружелюбном")
         length_info = length_map.get(content_length, length_map["medium"])
         
-        if language == "ru":
-            prompt = f"""
+        base_prompt_ru = f"""
 Напиши пост для социальной сети на тему "{topic}" в области "{theme}".
 
 Требования:
@@ -115,25 +117,26 @@ class OpenAIService:
 - Структура: заголовок, основной текст, призыв к действию
 - Используй эмодзи для привлечения внимания
 - Делай текст читабельным и интересным
-
-Тема поста: {topic}
-Тематика: {theme}
 """
-        else:
-            prompt = f"""
+
+        base_prompt_en = f"""
 Write a social media post about "{topic}" in the "{theme}" niche.
 
 Requirements:
-- Style: {style_text.replace('ном', '')} 
+- Style: {style_text.replace('ном', '')}
 - Language: English
 - Length: {length_info["en"]}
 - Structure: headline, main text, call to action
 - Use emojis to attract attention
 - Make the text readable and engaging
-
-Post topic: {topic}
-Theme: {theme}
 """
+
+        additional_notes = f"\nДополнительные инструкции: {user_notes}\n" if user_notes and language == "ru" else (f"\nAdditional notes: {user_notes}\n" if user_notes else "")
+
+        if prompt_template:
+            prompt = prompt_template.format(topic=topic, theme=theme, style=style, language=language, length=length_info["en"] if language != "ru" else length_info["ru"]) + additional_notes
+        else:
+            prompt = (base_prompt_ru if language == "ru" else base_prompt_en) + additional_notes + (f"\nТема поста: {topic}\nТематика: {theme}\n" if language == "ru" else f"\nPost topic: {topic}\nTheme: {theme}\n")
         
         return prompt
     

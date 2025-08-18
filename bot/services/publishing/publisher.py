@@ -11,18 +11,18 @@ from bot.services.crud.post import update_post
 
 class PublishingService:
     """Сервис для публикации постов в социальные сети"""
-    
+
     def __init__(self, bot: Bot):
         self.bot = bot
-    
+
     async def publish_post(self, session: AsyncSession, post_id: int) -> bool:
         """
         Публикует пост в соответствующий канал
-        
+
         Args:
             session: Сессия базы данных
             post_id: ID поста для публикации
-            
+
         Returns:
             bool: True если публикация успешна, False иначе
         """
@@ -31,13 +31,13 @@ class PublishingService:
             post_data = await self._get_post_with_details(session, post_id)
             if not post_data:
                 return False
-            
+
             post, workflow, settings, social_account = post_data
-            
+
             # Проверяем что пост готов к публикации
             if post.status not in ["pending", "scheduled"]:
                 return False
-            
+
             # Публикуем в зависимости от платформы
             success = False
             if social_account.platform == "telegram":
@@ -46,7 +46,7 @@ class PublishingService:
                 # Здесь можно добавить поддержку других платформ
                 print(f"Platform {social_account.platform} not supported yet")
                 return False
-            
+
             if success:
                 # Обновляем статус поста
                 await update_post(
@@ -70,20 +70,42 @@ class PublishingService:
             return False
     
     async def _get_post_with_details(self, session: AsyncSession, post_id: int):
-        """Получает пост со всеми связанными данными"""
-        query = (
-            select(Post, UserWorkflow, WorkflowSettings, SocialAccount)
-            .join(UserWorkflow, Post.user_workflow_id == UserWorkflow.id)
-            .join(WorkflowSettings, WorkflowSettings.user_workflow_id == UserWorkflow.id)
-            .join(SocialAccount, WorkflowSettings.social_account_id == SocialAccount.id)
-            .where(Post.id == post_id)
-        )
-        
-        result = await session.execute(query)
-        row = result.first()
-        
-        if row:
-            return row.Post, row.UserWorkflow, row.WorkflowSettings, row.SocialAccount
+        """Получает пост со всеми связанными данными.
+        Поддерживает два варианта:
+        1) Пост привязан к workflow (через WorkflowSettings → SocialAccount)
+        2) Пост имеет прямую ссылку на SocialAccount (manual без workflow)
+        """
+        # Попытка №1: полный путь через workflow/settings
+        try:
+            query = (
+                select(Post, UserWorkflow, WorkflowSettings, SocialAccount)
+                .join(UserWorkflow, Post.user_workflow_id == UserWorkflow.id)
+                .join(WorkflowSettings, WorkflowSettings.user_workflow_id == UserWorkflow.id)
+                .join(SocialAccount, WorkflowSettings.social_account_id == SocialAccount.id)
+                .where(Post.id == post_id)
+            )
+            result = await session.execute(query)
+            row = result.first()
+            if row:
+                return row.Post, row.UserWorkflow, row.WorkflowSettings, row.SocialAccount
+        except Exception:
+            pass
+
+        # Попытка №2: без workflow, напрямую через Post.social_account_id
+        try:
+            query2 = (
+                select(Post, SocialAccount)
+                .join(SocialAccount, Post.social_account_id == SocialAccount.id)
+                .where(Post.id == post_id)
+            )
+            result2 = await session.execute(query2)
+            row2 = result2.first()
+            if row2:
+                # Совместимость с основным форматом: вернем workflow/settings как None
+                return row2.Post, None, None, row2.SocialAccount
+        except Exception:
+            pass
+
         return None
     
     async def _publish_to_telegram(self, post: Post, social_account: SocialAccount) -> bool:
@@ -155,15 +177,19 @@ class PublishingService:
         """
         pending_posts = await self.get_pending_posts(session)
         
-        for post in pending_posts:
-            success = await self.publish_post(session, post.id)
-            if success:
-                print(f"Published post {post.id}: {post.topic}")
-            else:
-                print(f"Failed to publish post {post.id}: {post.topic}")
-            
-            # Небольшая задержка между публикациями
-            await asyncio.sleep(1) 
+        # Публикуем параллельно с ограничением степени параллелизма
+        semaphore = asyncio.Semaphore(5)
+
+        async def _worker(p):
+            async with semaphore:
+                success = await self.publish_post(session, p.id)
+                if success:
+                    print(f"Published post {p.id}: {p.topic}")
+                else:
+                    print(f"Failed to publish post {p.id}: {p.topic}")
+                await asyncio.sleep(0.5)
+
+        await asyncio.gather(*[ _worker(p) for p in pending_posts ])
 
     async def get_posts_for_n8n(self, session: AsyncSession, limit: int = 10) -> list[dict]:
         """

@@ -16,6 +16,7 @@ from bot.keyboards.inline.workflows import (
 from bot.services.crud.socials import get_social_accounts_by_user_id
 from bot.services.crud.workflow import create_user_workflow
 from bot.services.crud.workflow_settings import create_workflow_settings
+from bot.services.crud.prompt_template import get_all_prompt_templates
 import uuid
 
 router = Router()
@@ -32,6 +33,8 @@ class AddWorkflowState(StatesGroup):
     choosing_language = State()
     choosing_style = State()
     choosing_moderation = State()
+    choosing_mode = State()
+    choosing_prompt_template = State()
 
 async def add_workflow_start(callback: CallbackQuery, session, user, i18n, state: FSMContext, **_):
     await callback.answer()
@@ -111,9 +114,10 @@ async def process_media_type(callback: CallbackQuery, state: FSMContext, i18n, *
 
     await state.update_data(media_type=media)
 
+    # Уточняем текст: без упоминания «первого поста», так корректнее в единичных публикациях
     combined_text = (
         f"{i18n.get('workflow.add.time_note')}\n\n"
-        f"{i18n.get('workflow.add.enter_time')}"
+        f"{i18n.get('post.add.choose_publish_time', '⏰ Когда опубликовать пост?')}"
     )
     msg = await callback.message.answer(
         combined_text,
@@ -152,7 +156,7 @@ async def process_interval(callback: CallbackQuery, state: FSMContext, i18n, **_
     if interval_data == "custom":
         # Пользователь хочет ввести свой интервал
         msg = await callback.message.answer(
-            i18n.get("workflow.add.enter_interval", "⏱️ Введите интервал в часах (от 14 до 168):")
+            i18n.get("workflow.add.enter_interval", "⏱️ Введите интервал в часах (от 4 до 168):")
         )
         await state.set_state(AddWorkflowState.entering_custom_interval)
         await state.update_data(prev_msg_id=msg.message_id)
@@ -252,7 +256,8 @@ async def process_language(callback: CallbackQuery, state: FSMContext, i18n, **_
 async def process_style(callback: CallbackQuery, state: FSMContext, i18n, **_):
     await callback.answer()
     style = callback.data.split(":")[-1]
-    if style not in {"formal", "informal", "friendly"}:
+    # Допускаем formal / friendly / humorous (вместо informal)
+    if style not in {"formal", "friendly", "humorous"}:
         await callback.message.answer(i18n.get("workflow.add.invalid_style", "❌ Неверный стиль."))
         return
 
@@ -286,36 +291,124 @@ async def process_moderation(callback: CallbackQuery, state: FSMContext, session
             await callback.bot.delete_message(callback.message.chat.id, msg_id)
     except: pass
 
+    # Добавляем выбор режима работы задачи
+    text = i18n.get("workflow.add.choose_mode", "🎯 Выберите режим работы задачи:")
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text=i18n.get("workflow.mode.auto", "🤖 Автоматический"),
+                callback_data="workflow:mode:auto"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get("workflow.mode.manual", "🖐 Ручной"),
+                callback_data="workflow:mode:manual"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get("workflow.mode.mixed", "🔄 Смешанный"),
+                callback_data="workflow:mode:mixed"
+            )
+        ]
+    ])
+    
+    msg = await callback.message.answer(text, reply_markup=keyboard)
+    await state.update_data(moderation=moderation, prev_msg_id=msg.message_id)
+    await state.set_state(AddWorkflowState.choosing_mode)
 
 
+async def process_workflow_mode(callback: CallbackQuery, state: FSMContext, session, user, i18n, **_):
+    """Обработка выбора режима работы задачи"""
+    await callback.answer()
+    mode = callback.data.split(":")[-1]
+    
+    if mode not in {"auto", "manual", "mixed"}:
+        await callback.message.answer(i18n.get("workflow.add.invalid_mode", "❌ Неверный выбор режима."))
+        return
+
+    data = await state.get_data()
+    try:
+        if msg_id := data.get("prev_msg_id"):
+            await callback.bot.delete_message(callback.message.chat.id, msg_id)
+    except: pass
+
+    # После выбора режима предложим выбрать шаблон промпта
+    templates = await get_all_prompt_templates(session)
+    from bot.keyboards.inline.posts import get_prompt_templates_keyboard
+    text = i18n.get("prompt.choose_template", "🧩 Выберите шаблон промпта (можно пропустить):")
+    msg = await callback.message.answer(text, reply_markup=get_prompt_templates_keyboard(i18n, templates))
+    await state.update_data(selected_mode=mode, prev_msg_id=msg.message_id)
+    await state.set_state(AddWorkflowState.choosing_prompt_template)
+
+
+async def process_prompt_template_select(callback: CallbackQuery, state: FSMContext, session, user, i18n, **_):
+    await callback.answer()
+    data = await state.get_data()
+    try:
+        if msg_id := data.get("prev_msg_id"):
+            await callback.bot.delete_message(callback.message.chat.id, msg_id)
+    except: pass
+
+    cd = callback.data
+    prompt_template_id = None
+    if cd.startswith("prompt:select:"):
+        prompt_template_id = int(cd.split(":")[-1])
+    # Если prompt:default или любой другой — оставляем None
+
+    # Создаем задачу с выбранным режимом и шаблоном
+    mode = data.get("selected_mode", "auto")
     workflow = await create_user_workflow(
         session,
         user_id=user.id,
         name=data["name"],
         workflow_id=str(uuid.uuid4())
     )
+    
+    # Определяем интервал в зависимости от режима
+    interval_hours = data.get("interval_hours", 24) if mode in ["auto", "mixed"] else None
+    
     await create_workflow_settings(
         session,
         user_workflow_id=workflow.id,
         social_account_id=data["account_id"],
         theme=data["theme"],
         first_post_time=data["first_post_time"],
-        interval_hours=data.get("interval_hours", 24),  # По умолчанию 24 часа если не указан
-        writing_style=data["style"],  # formal, friendly, humorous
-        generation_method="ai",  # всегда ai при создании через бота
-        content_length=data.get("content_length", "medium"),  # short, medium, long
-        moderation=moderation,
+        interval_hours=interval_hours,  # None для ручного режима
+        writing_style=data["style"],
+        generation_method="ai",
+        content_length=data.get("content_length", "medium"),
+        moderation=data["moderation"],
         post_language=data["post_language"],
-        post_media_type=data["media_type"]
+        post_media_type=data["media_type"],
+        mode=mode,  # Новое поле режима
+        prompt_template_id=prompt_template_id
     )
 
-    await callback.message.answer(i18n.get("workflow.add.success"))
+    # Показываем сообщение об успешном создании с информацией о режиме
+    mode_text = {
+        "auto": i18n.get("workflow.mode.auto_desc", "автоматический"),
+        "manual": i18n.get("workflow.mode.manual_desc", "ручной"),
+        "mixed": i18n.get("workflow.mode.mixed_desc", "смешанный")
+    }.get(mode, mode)
+    
+    success_text = i18n.get("workflow.add.success_with_mode", 
+                           "✅ Задача '{name}' создана в {mode} режиме!").format(
+        name=data["name"], mode=mode_text
+    )
+    
+    await callback.message.answer(success_text)
     await state.clear()
 
 
 def register_add_workflow_handlers(router: Router):
     router.callback_query.register(add_workflow_start, F.data == "workflow:add")
     router.callback_query.register(process_moderation, F.data.startswith("moderation:"))
+    router.callback_query.register(process_workflow_mode, F.data.startswith("workflow:mode:"))
+    router.callback_query.register(process_prompt_template_select, F.data.startswith("prompt:"))
     router.callback_query.register(process_account_selection, F.data.startswith("workflow:account:"))
     router.callback_query.register(process_theme_selection, F.data.startswith("theme:"))
     router.callback_query.register(process_media_type, F.data.startswith("media:"))

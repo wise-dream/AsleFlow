@@ -49,7 +49,7 @@ async def settings_callback_handler(callback: CallbackQuery, session, i18n, user
         await back_to_settings_handler(callback, session, i18n, user)
         
     else:
-        await callback.answer("❌ Неизвестная команда")
+        await callback.answer(i18n.get("common.unknown_command", "❌ Неизвестная команда"))
 
 
 async def handle_email_settings(callback: CallbackQuery, session, i18n, user, **_):
@@ -59,8 +59,9 @@ async def handle_email_settings(callback: CallbackQuery, session, i18n, user, **
     if user.email:
         # Если email уже есть, предлагаем изменить
         text = (
-            f"📧 <b>Текущий email:</b> {user.email}\n\n"
-            f"{i18n.get('settings.email_change_prompt', 'Отправьте новый email или нажмите Отмена')}"
+            i18n.get('settings.current_email_label', '📧 <b>Текущий email:</b> {email}').format(email=user.email)
+            + "\n\n"
+            + i18n.get('settings.email_change_prompt', 'Отправьте новый email или нажмите Отмена')
         )
     else:
         # Если email нет, предлагаем добавить
@@ -117,8 +118,25 @@ async def handle_referral_settings(callback: CallbackQuery, session, i18n, user,
     )
 
 
+async def generate_referral_code_handler(callback: CallbackQuery, session, i18n, user, redis=None, **_):
+    """Генерирует новый реферальный код и сохраняет его пользователю"""
+    from bot.utils.referral import generate_unique_referral_code
+    from bot.keyboards.inline.settings import get_referral_keyboard
 
+    try:
+        new_code = await generate_unique_referral_code(session)
+        if not new_code:
+            await callback.answer(i18n.get("settings.referral_generation_error", "❌ Code generation error"), show_alert=True)
+            return
 
+        # Обновляем пользователя и очищаем кеш (если передан redis в другой логике)
+        await update_user_with_cache_clear(session, user.id, referral_code=new_code)
+
+        text = i18n.get("settings.referral_generated", "✅ Code generated!")
+        await callback.message.edit_text(text, reply_markup=get_referral_keyboard(i18n, new_code))
+        await callback.answer(i18n.get("settings.referral_success", "Code successfully generated!"))
+    except Exception:
+        await callback.answer(i18n.get("settings.referral_generation_error", "❌ Code generation error"), show_alert=True)
 
 async def referral_code_input_handler(message: Message, state: FSMContext, session, i18n, user, **_):
     """Обработчик ввода реферального кода в настройках"""
@@ -293,9 +311,9 @@ async def referral_copy_handler(callback: CallbackQuery, i18n, **_):
     data = callback.data
     if data.startswith("referral:copy:"):
         code = data.split(":")[2]
-        await callback.answer(f"📋 {i18n.get('referral.copy', 'Скопировано')}: {code}")
+        await callback.answer(f"📋 {i18n.get('referral.copied', 'Скопировано')}: {code}")
     else:
-        await callback.answer("❌ Ошибка копирования")
+        await callback.answer(i18n.get('referral.copy_error', '❌ Ошибка копирования'))
 
 
 
@@ -342,11 +360,11 @@ async def language_set_handler(callback: CallbackQuery, session, i18n, user, red
                 
                 await callback.answer(alert_text, show_alert=True)
             else:
-                await callback.answer("❌ Ошибка обновления языка")
+                await callback.answer(i18n.get('language.update_error', '❌ Ошибка обновления языка'))
                 
         except Exception as e:
             print(f"Ошибка обновления языка: {e}")
-            await callback.answer("❌ Ошибка обновления языка")
+            await callback.answer(i18n.get('language.update_error', '❌ Ошибка обновления языка'))
 
 
 async def referral_input_handler(callback: CallbackQuery, state: FSMContext, session, i18n, user, **_):
@@ -409,9 +427,6 @@ async def back_to_settings_handler(callback: CallbackQuery, session, i18n, user,
         i18n.get("settings.title", "⚙️ Настройки"),
         reply_markup=get_settings_keyboard(i18n)
     )
-
-
-
 
 
 def register_settings_handler(router: Router):

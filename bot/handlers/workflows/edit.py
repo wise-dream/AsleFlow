@@ -53,10 +53,14 @@ def get_workflow_info_text(workflow, settings, i18n):
         language_label = i18n.get("workflow.field.language", "🌐 Язык")
         style_label = i18n.get("workflow.field.style", "Стиль")
         moderation_label = i18n.get("workflow.field.moderation", "🔧 Модерация")
+        mode_label = i18n.get("workflow.field.mode", "🔄 Режим")
         
         # Форматируем интервал
         interval_hours = settings.interval_hours or 6
         interval_text = f"{interval_hours}ч" if i18n.get("language") == "ru" else f"{interval_hours}h"
+        
+        # Режим работы
+        mode_text = i18n.get(f"workflow.mode.{settings.mode}_desc", settings.mode)
         
         # Стиль письма
         style_value = i18n.get(f"workflow.style.{getattr(settings, 'writing_style', 'friendly')}", getattr(settings, 'writing_style', 'friendly'))
@@ -80,6 +84,7 @@ def get_workflow_info_text(workflow, settings, i18n):
             f"<b>{language_label}:</b> {lang_text}\n"
             f"✍️ <b>{style_label}:</b> {style_value}\n"
             f"<b>{moderation_label}:</b> {moderation_text}\n"
+            f"<b>{mode_label}:</b> {mode_text}\n"
         )
     
     return text

@@ -1,6 +1,7 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.models.models import Post
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def get_posts_keyboard(i18n: dict, posts: list[Post]) -> InlineKeyboardMarkup:
     """Клавиатура со списком постов"""
@@ -88,7 +89,7 @@ def get_post_creation_method_keyboard(i18n: dict) -> InlineKeyboardMarkup:
         callback_data="post:add:workflow"
     )
     kb.button(
-        text=i18n.get("post.add.manual_settings", "⚙️ Настроить вручную"),
+        text=i18n.get("post.add.from_scratch", "🆕 С нуля"),
         callback_data="post:add:manual"
     )
     kb.button(
@@ -96,5 +97,37 @@ def get_post_creation_method_keyboard(i18n: dict) -> InlineKeyboardMarkup:
         callback_data="posts:back"
     )
     
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def get_user_workflows_selection_keyboard(i18n: dict, workflows: list) -> InlineKeyboardMarkup:
+    """Клавиатура выбора задачи для создания поста"""
+    kb = InlineKeyboardBuilder()
+    if not workflows:
+        kb.button(text=i18n.get("post.add.no_workflows", "❌ Нет задач"), callback_data="noop")
+    else:
+        for wf in workflows:
+            name = getattr(wf, 'name', '—')
+            kb.button(
+                text=name,
+                callback_data=f"post:add:use_workflow:{wf.id}"
+            )
+    kb.button(text=i18n.get("common.back", "⬅️ Назад"), callback_data="posts:back")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def get_prompt_templates_keyboard(i18n: dict, templates: list, include_default: bool = True) -> InlineKeyboardMarkup:
+    """Клавиатура выбора шаблона промпта"""
+    kb = InlineKeyboardBuilder()
+    if include_default:
+        kb.button(text=i18n.get("prompt.use_default", "🧩 По умолчанию"), callback_data="prompt:default")
+    for t in templates[:20]:
+        kb.button(
+            text=f"{getattr(t, 'name', 'Template')}",
+            callback_data=f"prompt:select:{t.id}"
+        )
+    kb.button(text=i18n.get("common.back", "⬅️ Назад"), callback_data="posts:back")
     kb.adjust(1)
     return kb.as_markup()

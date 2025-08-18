@@ -75,10 +75,18 @@ def get_language_selection_keyboard(i18n) -> InlineKeyboardMarkup:
 
 def get_style_selection_keyboard(i18n) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text=i18n.get("workflow.style.formal"), callback_data="style:formal")
-    kb.button(text=i18n.get("workflow.style.friendly"), callback_data="style:friendly")
-    kb.button(text=i18n.get("workflow.style.humorous"), callback_data="style:humorous")
+    kb.button(text=i18n.get("workflow.style.formal", "🧾 Официальный"), callback_data="style:formal")
+    kb.button(text=i18n.get("workflow.style.friendly", "😊 Дружелюбный"), callback_data="style:friendly")
+    kb.button(text=i18n.get("workflow.style.humorous", "😄 Юмористический"), callback_data="style:humorous")
     kb.adjust(1)
+    return kb.as_markup()
+
+def get_workflow_mode_keyboard(i18n) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text=i18n.get("workflow.mode.auto", "🤖 Автоматический"), callback_data="workflow:mode:auto")
+    kb.button(text=i18n.get("workflow.mode.manual", "🖐 Ручной"), callback_data="workflow:mode:manual")
+    kb.button(text=i18n.get("workflow.mode.mixed", "🔄 Смешанный"), callback_data="workflow:mode:mixed")
+    kb.adjust(3)
     return kb.as_markup()
 
 def get_time_selection_keyboard() -> InlineKeyboardMarkup:
@@ -91,13 +99,7 @@ def get_time_selection_keyboard() -> InlineKeyboardMarkup:
     kb.adjust(2)
     return kb.as_markup()
 
-def get_style_selection_keyboard(i18n) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text=i18n.get("workflow.style.formal"), callback_data="style:formal")
-    kb.button(text=i18n.get("workflow.style.informal"), callback_data="style:informal")
-    kb.button(text=i18n.get("workflow.style.friendly"), callback_data="style:friendly")
-    kb.adjust(1)
-    return kb.as_markup()
+# Удалена дублирующаяся функция `get_style_selection_keyboard` и значение `informal`.
 
 def get_edit_workflow_keyboard(
     workflow_id: int,

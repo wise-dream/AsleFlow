@@ -4,8 +4,10 @@ from bot.models.models import Post
 
 ALLOWED_FIELDS = {
     "topic", "content", "media_type", "media_url",
-    "status", "scheduled_time", "moderated", "origin_topic",
-    "social_account_id", "user_workflow_id"
+    "status", "scheduled_time", "moderated",
+    "social_account_id", "user_workflow_id",
+    # Новые поля для ручных постов
+    "user_prompt", "user_notes", "is_manual", "prompt_template_id", "generation_temperature", "manual_topic"
 }
 
 
@@ -125,5 +127,47 @@ async def get_moderated_posts(session: AsyncSession) -> list[Post]:
     return result.scalars().all()
 
 async def get_posts_by_topic(session: AsyncSession, topic: str) -> list[Post]:
-    result = await session.execute(select(Post).where(Post.topic.contains(topic)))
+    result = await session.execute(select(Post).where(Post.topic == topic))
     return result.scalars().all()
+
+
+# Новые функции для работы с ручными постами
+async def get_manual_posts(session: AsyncSession, user_id: int = None) -> list[Post]:
+    """Получает ручные посты пользователя"""
+    query = select(Post).where(Post.is_manual == True)
+    if user_id:
+        query = query.join(Post.workflow).where(Post.workflow.has(user_id=user_id))
+    result = await session.execute(query)
+    return result.scalars().all()
+
+
+async def get_automatic_posts(session: AsyncSession, user_id: int = None) -> list[Post]:
+    """Получает автоматические посты пользователя"""
+    query = select(Post).where(Post.is_manual == False)
+    if user_id:
+        query = query.join(Post.workflow).where(Post.workflow.has(user_id=user_id))
+    result = await session.execute(query)
+    return result.scalars().all()
+
+
+async def get_posts_by_workflow_mode(session: AsyncSession, workflow_id: int, is_manual: bool = None) -> list[Post]:
+    """Получает посты по режиму работы задачи"""
+    query = select(Post).where(Post.user_workflow_id == workflow_id)
+    if is_manual is not None:
+        query = query.where(Post.is_manual == is_manual)
+    result = await session.execute(query)
+    return result.scalars().all()
+
+
+async def create_manual_post(session: AsyncSession, **kwargs) -> Post:
+    """Создает ручной пост с дополнительными параметрами"""
+    # Устанавливаем флаг ручного поста
+    kwargs['is_manual'] = True
+    return await create_post(session, **kwargs)
+
+
+async def create_automatic_post(session: AsyncSession, **kwargs) -> Post:
+    """Создает автоматический пост"""
+    # Устанавливаем флаг автоматического поста
+    kwargs['is_manual'] = False
+    return await create_post(session, **kwargs)

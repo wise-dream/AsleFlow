@@ -37,7 +37,7 @@ async def start_handler(
             default_lang='en',
         )
 
-        en_texts = I18nMiddleware().translations["en"]
+        en_texts = I18nMiddleware().translations.get("en", {})
         welcome_text = en_texts.get("welcome", "Welcome, {name}!").format(name=user.name or full_name)
         
         # Добавляем информацию о реферальном коде, если он был использован

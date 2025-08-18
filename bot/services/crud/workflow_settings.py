@@ -5,7 +5,9 @@ from bot.models.models import WorkflowSettings
 ALLOWED_FIELDS = {
     "social_account_id", "interval_hours", "theme", "context", "writing_style",
     "generation_method", "content_length", "moderation", "first_post_time",
-    "post_language", "post_media_type", "notifications_enabled", "last_execution"
+    "post_language", "post_media_type", "notifications_enabled", "last_execution",
+    "mode",  # Новое поле для режима работы
+    "prompt_template_id"  # Связанный шаблон промпта по умолчанию
 }
 
 async def create_workflow_settings(session: AsyncSession, **kwargs) -> WorkflowSettings:
@@ -100,3 +102,54 @@ async def update_last_execution(session: AsyncSession, settings_id: int) -> Work
     await session.commit()
     await session.refresh(settings)
     return settings
+
+
+# Новые функции для работы с режимом задачи
+async def get_workflows_by_mode(session: AsyncSession, mode: str) -> list[WorkflowSettings]:
+    """Получает задачи по режиму работы"""
+    result = await session.execute(
+        select(WorkflowSettings).where(WorkflowSettings.mode == mode)
+    )
+    return result.scalars().all()
+
+
+async def get_auto_workflows(session: AsyncSession) -> list[WorkflowSettings]:
+    """Получает автоматические задачи"""
+    return await get_workflows_by_mode(session, 'auto')
+
+
+async def get_manual_workflows(session: AsyncSession) -> list[WorkflowSettings]:
+    """Получает ручные задачи"""
+    return await get_workflows_by_mode(session, 'manual')
+
+
+async def get_mixed_workflows(session: AsyncSession) -> list[WorkflowSettings]:
+    """Получает смешанные задачи"""
+    return await get_workflows_by_mode(session, 'mixed')
+
+
+async def update_workflow_mode(session: AsyncSession, settings_id: int, mode: str) -> WorkflowSettings | None:
+    """Обновляет режим работы задачи"""
+    settings = await get_workflow_settings_by_id(session, settings_id)
+    if not settings:
+        return None
+    
+    settings.mode = mode
+    await session.commit()
+    await session.refresh(settings)
+    return settings
+
+
+async def get_workflows_for_manual_posts(session: AsyncSession, user_id: int = None) -> list[WorkflowSettings]:
+    """Получает задачи, которые можно использовать для ручных постов"""
+    query = select(WorkflowSettings).where(
+        WorkflowSettings.mode.in_(['manual', 'mixed'])
+    )
+    
+    if user_id:
+        query = query.join(WorkflowSettings.user_workflow).where(
+            WorkflowSettings.user_workflow.has(user_id=user_id)
+        )
+    
+    result = await session.execute(query)
+    return result.scalars().all()

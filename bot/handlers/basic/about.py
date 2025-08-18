@@ -6,7 +6,7 @@ from aiogram import Router
 from sqlalchemy import select, func
 from datetime import datetime, timezone
 
-from bot.models.models import Post, UserWorkflow, SocialAccount, Subscription
+from bot.models.models import Post, UserWorkflow, SocialAccount, Subscription, User
 from bot.keyboards.inline.settings import get_settings_keyboard, get_simple_settings_keyboard
 
 router = Router()
@@ -91,8 +91,16 @@ async def about_handler(message: Message, session, i18n, user, **_):
         print(f"КРИТИЧЕСКАЯ ОШИБКА: У пользователя {user.id} (Telegram ID: {user.telegram_id}) нет реферального кода!")
     
     # Информация о реферере
-    if user.referred_by:
-        referrer_name = user.referred_by.name
+    if user.referred_by_id:
+        # Получаем информацию о пригласившем пользователе
+        referrer_result = await session.execute(
+            select(User).where(User.id == user.referred_by_id)
+        )
+        referrer = referrer_result.scalar_one_or_none()
+        if referrer:
+            referrer_name = referrer.name
+        else:
+            referrer_name = i18n.get("about.no_referrer")
     else:
         referrer_name = i18n.get("about.no_referrer")
     

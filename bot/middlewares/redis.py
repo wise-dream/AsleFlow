@@ -1,23 +1,24 @@
-# middlewares/redis.py
-from aiogram.types import TelegramObject
-from aiogram.dispatcher.middlewares.base import BaseMiddleware
+from aiogram import BaseMiddleware
+from aiogram.types import Update
 from typing import Callable, Awaitable, Dict, Any
-from redis.asyncio import Redis
+from redis.asyncio.client import Redis
 import logging
 
 logger = logging.getLogger(__name__)
 
+
 class RedisMiddleware(BaseMiddleware):
     def __init__(self, redis: Redis):
-        self.redis = redis
         super().__init__()
+        self.redis = redis
 
     async def __call__(
         self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: Dict[str, Any]
+        handler: Callable[[Update, Dict[str, Any]], Awaitable[Any]],
+        event: Update,
+        data: Dict[str, Any],
     ) -> Any:
+        # Inject shared Redis client instance into handler context
         data["redis"] = self.redis
         logger.debug("Redis instance injected into handler context")
         return await handler(event, data)

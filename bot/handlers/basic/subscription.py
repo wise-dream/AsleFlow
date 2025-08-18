@@ -91,12 +91,12 @@ async def balance_amount_handler(callback: CallbackQuery, session, i18n, user, r
     try:
         amount = float(amount_str)
     except ValueError:
-        await callback.answer("❌ Неверная сумма", show_alert=True)
+        await callback.answer(i18n.get("balance.invalid_amount", "❌ Неверная сумма"), show_alert=True)
         return
     
     # Проверяем лимиты
     if amount < 100 or amount > 10000:
-        await callback.answer("❌ Сумма должна быть от 100 до 10000 рублей", show_alert=True)
+        await callback.answer(i18n.get("balance.amount_out_of_range", "❌ Сумма должна быть от 100 до 10000 рублей"), show_alert=True)
         return
     
     # Пополняем баланс
@@ -115,7 +115,7 @@ async def balance_amount_handler(callback: CallbackQuery, session, i18n, user, r
         )
         
         # Если у пользователя есть реферал, показываем информацию о бонусе
-        if user.referred_by_id:
+        if updated_user.referred_by_id:
             bonus_amount = amount * 0.1
             text += f"\n\n🎁 <b>Реферальный бонус:</b> {bonus_amount} руб. добавлено пригласившему"
         
@@ -123,7 +123,7 @@ async def balance_amount_handler(callback: CallbackQuery, session, i18n, user, r
             [InlineKeyboardButton(text="🔙 К подпискам", callback_data="subscription:back")]
         ]))
     else:
-        await callback.answer("❌ Ошибка при пополнении баланса", show_alert=True)
+        await callback.answer(i18n.get("balance.topup_error", "❌ Ошибка при пополнении баланса"), show_alert=True)
     
     await callback.answer()
 
@@ -152,16 +152,16 @@ async def balance_custom_amount_handler(message: Message, state: FSMContext, ses
     try:
         amount = float(message.text)
     except ValueError:
-        await message.answer("❌ Пожалуйста, введите корректную сумму (только цифры)")
+        await message.answer(i18n.get("balance.enter_valid_number", "❌ Пожалуйста, введите корректную сумму (только цифры)"))
         return
     
     # Проверяем лимиты
     if amount < 100:
-        await message.answer("❌ Минимальная сумма пополнения: 100 рублей")
+        await message.answer(i18n.get("balance.min_amount_error", "❌ Минимальная сумма пополнения: 100 рублей"))
         return
     
     if amount > 10000:
-        await message.answer("❌ Максимальная сумма пополнения: 10000 рублей")
+        await message.answer(i18n.get("balance.max_amount_error", "❌ Максимальная сумма пополнения: 10000 рублей"))
         return
     
     # Пополняем баланс
@@ -180,7 +180,7 @@ async def balance_custom_amount_handler(message: Message, state: FSMContext, ses
         )
         
         # Если у пользователя есть реферал, показываем информацию о бонусе
-        if user.referred_by_id:
+        if updated_user.referred_by_id:
             bonus_amount = amount * 0.1
             text += f"\n\n🎁 <b>Реферальный бонус:</b> {bonus_amount} руб. добавлено пригласившему"
         
@@ -188,7 +188,7 @@ async def balance_custom_amount_handler(message: Message, state: FSMContext, ses
             [InlineKeyboardButton(text="🔙 К подпискам", callback_data="subscription:back")]
         ]))
     else:
-        await message.answer("❌ Ошибка при пополнении баланса")
+        await message.answer(i18n.get("balance.topup_error", "❌ Ошибка при пополнении баланса"))
     
     await state.clear()
 
@@ -254,7 +254,7 @@ async def plan_select_handler(callback: CallbackQuery, session, i18n, user, **_)
     try:
         plan_id = int(plan_id_str)
     except ValueError:
-        await callback.answer("❌ Неверный план", show_alert=True)
+        await callback.answer(i18n.get("subscription.invalid_plan", "❌ Неверный план"), show_alert=True)
         return
     
     # Получаем план
@@ -262,7 +262,7 @@ async def plan_select_handler(callback: CallbackQuery, session, i18n, user, **_)
     plan = await get_plan_by_id(session, plan_id)
     
     if not plan:
-        await callback.answer("❌ План не найден", show_alert=True)
+        await callback.answer(i18n.get("subscription.plan_not_found", "❌ План не найден"), show_alert=True)
         return
     
     # Проверяем баланс пользователя
@@ -329,7 +329,7 @@ async def plan_confirm_handler(callback: CallbackQuery, session, i18n, user, red
     try:
         plan_id = int(plan_id_str)
     except ValueError:
-        await callback.answer("❌ Неверный план", show_alert=True)
+        await callback.answer(i18n.get("subscription.invalid_plan", "❌ Неверный план"), show_alert=True)
         return
     
     # Получаем план
@@ -337,7 +337,7 @@ async def plan_confirm_handler(callback: CallbackQuery, session, i18n, user, red
     plan = await get_plan_by_id(session, plan_id)
     
     if not plan:
-        await callback.answer("❌ План не найден", show_alert=True)
+        await callback.answer(i18n.get("subscription.plan_not_found", "❌ План не найден"), show_alert=True)
         return
     
     # Проверяем баланс еще раз
@@ -346,7 +346,7 @@ async def plan_confirm_handler(callback: CallbackQuery, session, i18n, user, red
     plan_price = Decimal(str(plan.price))
     
     if user_cash < plan_price:
-        await callback.answer("❌ Недостаточно средств", show_alert=True)
+        await callback.answer(i18n.get("subscription.not_enough_balance", "❌ Недостаточно средств"), show_alert=True)
         return
     
     # Создаем подписку
@@ -391,7 +391,7 @@ async def plan_confirm_handler(callback: CallbackQuery, session, i18n, user, red
             [InlineKeyboardButton(text="🔙 К подпискам", callback_data="subscription:back")]
         ]))
     else:
-        await callback.answer("❌ Ошибка при оформлении подписки", show_alert=True)
+        await callback.answer(i18n.get("subscription.purchase_error", "❌ Ошибка при оформлении подписки"), show_alert=True)
     
     await callback.answer()
 

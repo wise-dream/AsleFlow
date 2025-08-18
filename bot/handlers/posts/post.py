@@ -17,8 +17,18 @@ router = Router()
 
 
 async def get_posts_by_user_id(session, user_id: int, status_filter: str = None) -> list[Post]:
-    """Получение постов пользователя с опциональной фильтрацией по статусу"""
-    query = select(Post).join(UserWorkflow).where(UserWorkflow.user_id == user_id)
+    """Получение постов пользователя с опциональной фильтрацией по статусу.
+    Для совместимости с постами без user_workflow_id дополнительно фильтруем по SocialAccount.user_id.
+    """
+    from bot.models.models import SocialAccount
+    query = (
+        select(Post)
+        .outerjoin(UserWorkflow, Post.user_workflow_id == UserWorkflow.id)
+        .outerjoin(SocialAccount, Post.social_account_id == SocialAccount.id)
+        .where(
+            (UserWorkflow.user_id == user_id) | (SocialAccount.user_id == user_id)
+        )
+    )
     
     if status_filter and status_filter != "all":
         query = query.where(Post.status == status_filter)
@@ -28,17 +38,21 @@ async def get_posts_by_user_id(session, user_id: int, status_filter: str = None)
     return result.scalars().all()
 
 
-def format_posts_stats_text(stats, i18n):
-    text = []
-    if stats.get('pending'):
-        text.append(i18n.get("post.stats.pending", "⏳ Ожидание: {count}").format(count=stats['pending']))
-    if stats.get('scheduled'):
-        text.append(i18n.get("post.stats.scheduled", "📅 Запланированы: {count}").format(count=stats['scheduled']))
-    if stats.get('published'):
-        text.append(i18n.get("post.stats.published", "✅ Опубликованы: {count}").format(count=stats['published']))
-    if stats.get('failed'):
-        text.append(i18n.get("post.stats.failed", "❌ Неудачные: {count}").format(count=stats['failed']))
-    return "\n".join(text)
+def format_posts_stats_text(posts, i18n):
+    counts = {"pending": 0, "scheduled": 0, "published": 0, "failed": 0}
+    for p in posts:
+        if p.status in counts:
+            counts[p.status] += 1
+    lines = []
+    if counts["pending"]:
+        lines.append(i18n.get("post.stats.pending", "⏳ Ожидание: {count}").format(count=counts["pending"]))
+    if counts["scheduled"]:
+        lines.append(i18n.get("post.stats.scheduled", "📅 Запланированы: {count}").format(count=counts["scheduled"]))
+    if counts["published"]:
+        lines.append(i18n.get("post.stats.published", "✅ Опубликованы: {count}").format(count=counts["published"]))
+    if counts["failed"]:
+        lines.append(i18n.get("post.stats.failed", "❌ Неудачные: {count}").format(count=counts["failed"]))
+    return "\n".join(lines)
 
 
 async def posts_handler(message: Message, session, i18n, user, **_):
@@ -114,6 +128,9 @@ async def view_post_handler(callback: CallbackQuery, session, user, i18n, **_):
     # Форматируем модерацию
     moderation_text = i18n.get("post.moderation.yes", "✅ Да") if post.moderated else i18n.get("post.moderation.no", "❌ Нет")
 
+    # Тип поста (ручной/автоматический)
+    post_type = i18n.get("post.type.manual", "🖐 Ручной") if post.is_manual else i18n.get("post.type.auto", "🤖 Автоматический")
+
     # Язык
     lang_code = (user.language or 'ru').upper()
     flag = {
@@ -129,11 +146,12 @@ async def view_post_handler(callback: CallbackQuery, session, user, i18n, **_):
     text = (
         f"📝 <b>{post.topic}</b>\n\n"
         f"<b>{i18n.get('post.field.status', '📊 Статус')}:</b> {status_text}\n"
+        f"<b>{i18n.get('post.field.type', '🔄 Тип')}:</b> {post_type}\n"
         f"<b>{i18n.get('post.field.scheduled_time', '📅 Запланировано')}:</b> {scheduled_time}\n"
         f"<b>{i18n.get('post.field.published_time', '✅ Опубликовано')}:</b> {published_time}\n"
-        f"<b>{i18n.get('post.field.moderation', '🔧 Модерация')}:</b> {moderation_text}\n\n"
+        f"<b>{i18n.get('post.field.moderation', '🔧 Модерация')}:</b> {moderation_text}\n"
+        f"<b>{i18n.get('workflow.field.language', '🌐 Язык')}:</b> {lang_text}\n\n"
         f"<b>{i18n.get('post.field.content', '📄 Контент')}:</b>\n{post.content[:500]}"
-        f"<b>{i18n.get('workflow.field.language', '🌐 Язык')}:</b> {lang_text}\n"
     )
     
     if len(post.content) > 500:

@@ -221,11 +221,10 @@ async def handle_referrer_code_input(message: Message, state: FSMContext, sessio
             
             # Отправляем подтверждение
             await message.answer(
-                i18n.get('referral.success',
-                         f'✅ <b>Реферальная связь установлена!</b>\n\n'
-                         f'Вы были приглашены пользователем: <b>{referrer.name}</b>\n'
-                         f'Его реферальный код: <code>{referrer.referral_code}</code>\n\n'
-                         f'Теперь вы можете получать бонусы за приглашения!'),
+                i18n.get('referral.success').format(
+                    referrer_name=referrer.name,
+                    referral_code=referrer.referral_code
+                ),
                 reply_markup=get_back_to_settings_keyboard(i18n)
             )
             
